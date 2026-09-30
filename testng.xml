@@ -5,6 +5,7 @@
         <classes>
             <class name="tests.LaunchTest"/>
             <class name="tests.HomePageTest"/>
+            <class name="tests.CityCaptureTest"/>
         </classes>
     </test>
 </suite>
