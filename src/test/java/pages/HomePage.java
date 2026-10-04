@@ -12,8 +12,10 @@ import org.openqa.selenium.Keys;
 import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.FluentWait;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 // Represents the MakeMyTrip home page (scenario steps 2 to 5).
@@ -97,38 +99,90 @@ public class HomePage extends BasePage {
     private List<String[]> captureCities(By field, List<String> seeds) {
         Map<String, String[]> unique = new LinkedHashMap<>();
         click(field);
-        String previous = "";
+
+        // The To box opens with a default "popular cities" list (the From box shows nothing).
+        // Wait until that default list has finished loading, then remember it, so it can never
+        // be mistaken for the result of a search.
+        String defaultList = waitForStableList();
+        System.out.println("[capture v3] default list on opening: " + (defaultList.isEmpty() ? "(none)" : defaultList));
 
         for (String seed : seeds) {
-            type(cityTextBox, seed.trim());
-            previous = waitForSuggestionsToChange(previous);
-            for (String[] row : readSuggestions()) {
+            String before = suggestionsSnapshot();          // list on screen BEFORE typing
+            typeIntoActiveBox(seed.trim());
+            if (!waitForNewList(before, defaultList)) {
+                // Nothing new appeared. Type once more and wait again.
+                System.out.println("List did not change for '" + seed.trim() + "', typing again");
+                typeIntoActiveBox(seed.trim());
+                waitForNewList(before, defaultList);
+            }
+            List<String[]> rows = readSuggestions();
+            StringBuilder codes = new StringBuilder();
+            for (String[] r : rows) {
+                codes.append(r[0]).append(' ');
+            }
+            System.out.println("Seed '" + seed.trim() + "' returned " + rows.size() + " suggestions: " + codes);
+            for (String[] row : rows) {
                 unique.putIfAbsent(row[0], row);
             }
         }
         return new ArrayList<>(unique.values());
     }
 
-    // After typing, the OLD list stays for a moment. Wait until the list text is different.
-    private String waitForSuggestionsToChange(String previous) {
+    // Types into whichever text box currently has the cursor, which is the box that opened
+    // when we clicked From or To.
+    private void typeIntoActiveBox(String text) {
+        wait.until(d -> "input".equalsIgnoreCase(d.switchTo().activeElement().getTagName()));
+        WebElement box = driver.switchTo().activeElement();
+        box.sendKeys(Keys.chord(Keys.CONTROL, "a"), Keys.BACK_SPACE);
+        box.sendKeys(text);
+        System.out.println("Typed '" + text + "' into box placeholder='" + box.getAttribute("placeholder")
+                + "', value now='" + box.getAttribute("value") + "'");
+    }
+
+    // Waits until the list on screen has stopped changing (same on two checks in a row).
+    // Returns it as a snapshot. Returns "" if no list ever appears (the From box).
+    private String waitForStableList() {
+        final String[] last = { null };
         try {
-            new WebDriverWait(driver, Duration.ofSeconds(5))
+            new FluentWait<>(driver)
+                    .withTimeout(Duration.ofSeconds(4))
+                    .pollingEvery(Duration.ofMillis(400))
                     .ignoring(StaleElementReferenceException.class)
                     .until(d -> {
                         String now = suggestionsSnapshot();
-                        return !now.isEmpty() && !now.equals(previous);
+                        boolean stable = !now.isEmpty() && now.equals(last[0]);
+                        last[0] = now;
+                        return stable;
                     });
         } catch (TimeoutException e) {
-            // The list may legitimately be identical to the last one. Carry on.
+            // No default list in this box. That's fine.
         }
         return suggestionsSnapshot();
     }
 
-    // All suggestion text joined into one string, used only to detect that the list changed
+    // After typing, an OLD list stays for a moment. Wait until the list is a genuinely new one:
+    // not empty, not what was there before typing, and not the default list.
+    // Returns true if a new list appeared.
+    private boolean waitForNewList(String before, String defaultList) {
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(6))
+                    .ignoring(StaleElementReferenceException.class)
+                    .until(d -> {
+                        String now = suggestionsSnapshot();
+                        return !now.isEmpty() && !now.equals(before) && !now.equals(defaultList);
+                    });
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+    // A short fingerprint of the list on screen: just the airport codes, joined together.
+    // Using codes means small text re-renders are ignored; only a different set of cities counts.
     private String suggestionsSnapshot() {
         Object result = ((JavascriptExecutor) driver).executeScript(
-                "return Array.from(document.querySelectorAll(\"ul[role='listbox'] li\"))"
-                        + ".map(function(li){ return li.textContent; }).join('|');");
+                "return Array.from(document.querySelectorAll(\"ul[role='listbox'] li .revampedIataText\"))"
+                        + ".map(function(e){ return e.textContent.trim(); }).join('|');");
         return result == null ? "" : result.toString();
     }
 

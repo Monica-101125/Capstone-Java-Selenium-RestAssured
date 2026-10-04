@@ -3,12 +3,13 @@ package pages;
 import java.time.Duration;
 
 import org.openqa.selenium.By;
+import org.openqa.selenium.ElementClickInterceptedException;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
-import org.openqa.selenium.ElementClickInterceptedException;
-import org.openqa.selenium.JavascriptExecutor;
 
 // Parent of every page class. Holds the driver and the reusable "wait then act" helpers.
 public class BasePage {
@@ -27,7 +28,6 @@ public class BasePage {
         return wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
     }
 
-    // Wait until the element can be clicked, then click it
     // Wait until clickable, then click. If something covers it, fall back to a JavaScript click
     protected void click(By locator) {
         WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locator));
@@ -39,10 +39,13 @@ public class BasePage {
         }
     }
 
-    // Wait for the field, clear old text, type new text
+    // Wait for the field, empty it like a person would (Ctrl+A, Backspace), then type.
+    // Selenium's clear() alone often fails on React-based search boxes, so old text stays.
     protected void type(By locator, String text) {
         WebElement element = waitForVisible(locator);
+        element.click();
         element.clear();
+        element.sendKeys(Keys.chord(Keys.CONTROL, "a"), Keys.BACK_SPACE);
         element.sendKeys(text);
     }
 

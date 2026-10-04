@@ -24,6 +24,8 @@ public class CityCaptureTest extends BaseTest {
         List<String> seeds = Arrays.asList(config.getProperty("city.search.seeds").split(","));
         String excelPath = config.getProperty("cities.excel.path");
 
+        System.out.println("Seeds used: " + seeds);
+
         home.closeLoginPopupIfPresent();
         home.selectRoundTrip();
 
