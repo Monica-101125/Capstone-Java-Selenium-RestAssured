@@ -1,9 +1,12 @@
 package pages;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.openqa.selenium.By;
@@ -29,6 +32,25 @@ public class HomePage extends BasePage {
     private final By fromField        = By.id("fromCity");
     private final By toField          = By.id("toCity");
     private final By cityTextBox      = By.xpath("//input[@placeholder='Enter city or airport' or @placeholder='From' or @placeholder='To']");
+
+    // Search widget (names come from the page's own data-cy labels)
+    private final By departureField  = By.cssSelector("[data-cy='departure']");
+    private final By returnField     = By.cssSelector("[data-cy='return']");
+    private final By departureShown  = By.cssSelector("[data-cy='departureDate']");
+    private final By returnShown     = By.cssSelector("[data-cy='returnDate']");
+    private final By nextMonthButton = By.xpath("//span[@aria-label='Next Month']");
+    private final By travellersBox   = By.cssSelector("[data-cy='travellers']");
+    private final By travellersClick = By.cssSelector("label[for='travellers']");
+    private final By travellersShown = By.cssSelector("[data-cy='flightTravellersOnly']");
+    private final By cabinClick      = By.cssSelector("label[for='cabinClass']");
+    private final By cabinShown      = By.cssSelector("label[for='cabinClass'] .cabinClassLabel");
+    private final By regularFare     = By.xpath("//div[contains(@class,'fareCardItem')][.//div[normalize-space(text())='Regular']]");
+    private final By cabinClassBox   = By.cssSelector("[data-cy='cabinClass']");
+    private final By searchButton    = By.cssSelector("[data-cy='submit']");
+
+    // The calendar labels each day like "Wed Nov 04 2026"
+    private static final DateTimeFormatter CALENDAR_LABEL =
+            DateTimeFormatter.ofPattern("EEE MMM dd yyyy", Locale.ENGLISH);
 
     public HomePage(WebDriver driver) {
         super(driver);
@@ -82,6 +104,82 @@ public class HomePage extends BasePage {
     public String getToCityValue() {
         return getValue(toField);
     }
+
+    // ---------- Steps 6 to 9: dates, fare type, travellers and class, search ----------
+
+    public void selectDepartureDate(LocalDate date) {
+        selectDate(departureField, date);
+    }
+
+    public void selectReturnDate(LocalDate date) {
+        selectDate(returnField, date);
+    }
+
+    // Step 6: pick a date in the calendar. The calendar shows two months at a time,
+    // so click "next month" only if the date isn't visible yet.
+    private void selectDate(By dateField, LocalDate date) {
+        String dayCell = "div.DayPicker-Day[aria-label='" + date.format(CALENDAR_LABEL) + "']"
+                + ":not(.DayPicker-Day--outside)";
+
+        if (!isPresent("div.DayPicker-Day")) {
+            click(dateField);                                   // calendar is closed, so open it
+        }
+        waitForVisible(By.cssSelector("div.DayPicker-Day"));     // wait for it to finish drawing
+
+        for (int i = 0; i < 6 && !isPresent(dayCell); i++) {
+            click(nextMonthButton);
+        }
+        click(By.cssSelector(dayCell));
+    }
+
+    // Quick yes/no check that an element exists, without waiting
+    private boolean isPresent(String cssSelector) {
+        Object found = ((JavascriptExecutor) driver).executeScript(
+                "return document.querySelector(arguments[0]) !== null;", cssSelector);
+        return Boolean.TRUE.equals(found);
+    }
+
+    // Step 7: passenger type "Regular"
+    public void selectRegularFare() {
+        click(regularFare);
+    }
+
+    // Validation: the page marks the chosen fare card with the class "activeList"
+    public boolean isRegularFareSelected() {
+        return waitForVisible(regularFare).getAttribute("class").contains("activeList");
+    }
+
+    // Step 8: number of adults, then cabin class
+    public void selectTravellersAndClass(int adults, String cabin) {
+        click(travellersClick);                                          // opens the travellers panel
+        click(By.cssSelector("li[data-cy='adults-" + adults + "']"));    // e.g. the "1" button
+        click(By.cssSelector("button[data-cy='travellerApplyBtn']"));    // APPLY
+        selectCabinClass(cabin);
+    }
+
+    // The cabin class is a separate box. If it already shows the class we want
+    // (the default is "Economy/Premium Economy"), there is nothing to change.
+    private void selectCabinClass(String cabin) {
+        if (getCabinText().toLowerCase().contains(cabin.toLowerCase())) {
+            System.out.println("Cabin class already set to: " + getCabinText());
+            return;
+        }
+        // Not the one we want, so open the box and pick it by its visible name.
+        // (Not exercised yet, since the default is Economy. We will check it if we ever need it.)
+        click(cabinClick);
+        click(By.xpath("//*[self::li or self::p or self::span][contains(normalize-space(text()),'" + cabin + "')]"));
+    }
+
+    // Step 9: search for flights
+    public void clickSearch() {
+        click(searchButton);
+    }
+
+    // Used for validations
+    public String getDepartureText()  { return waitForVisible(departureShown).getText(); }
+    public String getReturnText()     { return waitForVisible(returnShown).getText(); }
+    public String getTravellersText() { return waitForVisible(travellersShown).getText(); }
+    public String getCabinText()      { return waitForVisible(cabinShown).getText(); }
 
     // ---------- Step 5: capture cities (code, city, airport) ----------
 
